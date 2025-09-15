@@ -1,3 +1,9 @@
+# Fomo Faucet
+**This contract is a fun take on faucets and a reverse dutch auction game mechanic.** 
+
+The idea is to allow anyone to make a claim of hoodiEth from any wallet. The longer users wait, the larger the claim they can make from the pot. If they wait too long however they increase their chance of being sniped by another player which will restart the claim amount after each new claim. There is a limit of 1 claim per day for each address and a minClaimAmount to prevent ddos style attacks. The game is not designed to ensure complete fairness. I encourage anyone to figure out ways to break the game and claim as much hoodiEth as possible.
+
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
