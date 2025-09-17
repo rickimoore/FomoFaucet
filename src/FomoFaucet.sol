@@ -21,6 +21,12 @@ error InvalidSlowDownPerClaim();
 /// @notice Thrown when minClaimAmount is set to 0.
 error InvalidMinClaimAmount();
 
+/// @notice Thrown when user tries to claim while faucet is empty.
+    error FaucetEmpty();
+
+/// @notice Thrown when Faucet fails to transfer entire balance to owner.
+    error WithdrawalFailed();
+
 /// @title The Fomo-Faucet
 /// @author Mavrik
 /**
@@ -38,6 +44,7 @@ contract FomoFaucet is Ownable {
     uint256 private baseRatePerSecond; //fixed-point number
     uint256 private slowDownPerClaim; //fixed-point number
     uint256 public minClaimAmount;
+    uint256 public totalDispensed;
     uint64 constant scale = 1e18; //integer
 
     mapping(address => uint256) public lastClaimDay;
@@ -58,6 +65,16 @@ contract FomoFaucet is Ownable {
     /// @notice Emitted when owner updates slowDownPerClaim.
     /// @param amount is the new value of the slowDownPerClaim.
     event SlowDownPerClaimUpdated(uint256 amount);
+
+    /// @notice Emitted when someone deposits ETH into the faucet.
+    /// @param sender The address which sent ETH.
+    /// @param amount The amount of ETH deposited.
+    event Deposited(address indexed sender, uint256 amount);
+
+    /// @notice Emitted when the owner withdraws all ETH from the faucet.
+    /// @param to The address receiving the withdrawn ETH.
+    /// @param amount The amount of ETH withdrawn.
+    event Withdrawn(address indexed to, uint256 amount);
 
     constructor(uint256 _baseRate, uint256 _slowDownPerClaim, uint256 _minClaimAmount) Ownable(msg.sender) {
         if (_baseRate == 0) {
@@ -131,9 +148,15 @@ contract FomoFaucet is Ownable {
 
     /// @notice Dispenses wei to msg.sender 1x per day.
     /// @custom:revert AlreadyClaimedToday If adequate time has not passed since msg.sender last claim.
-    /// @custom:revert ClaimTooLow If not enough time has passed since las claim.
+    /// @custom:revert ClaimTooLow If not enough time has passed since last claim.
     /// @custom:revert DispenseFailed If contract failed to send ETH.
-    function claim() public {
+    function claim() external {
+        uint256 balance = address(this).balance;
+
+        if(balance == 0) {
+            revert FaucetEmpty();
+        }
+
         uint256 timeNow = block.timestamp;
         uint256 today = timeNow / 1 days;
         if (lastClaimDay[msg.sender] == today) {
@@ -141,8 +164,6 @@ contract FomoFaucet is Ownable {
         }
 
         uint256 claimAmount = calculateClaim(); // this returns unscaled wei
-
-        uint256 balance = address(this).balance;
 
         if (balance <= minClaimAmount) {
             claimAmount = balance;
@@ -153,6 +174,7 @@ contract FomoFaucet is Ownable {
         lastClaimDay[msg.sender] = today;
         lastClaim = timeNow;
         claimCount += 1;
+        totalDispensed += claimAmount;
 
         (bool success,) = payable(msg.sender).call{value: claimAmount}("");
 
@@ -161,5 +183,33 @@ contract FomoFaucet is Ownable {
         }
 
         emit ClaimDispensed(msg.sender, claimAmount);
+    }
+
+    /// @notice Allows anyone to deposit ETH into the faucet.
+    /// @dev Emits a {Deposited} event on non-zero deposits.
+    receive() external payable {
+        if (msg.value > 0) {
+            emit Deposited(msg.sender, msg.value);
+        }
+    }
+
+    /// @notice Allows owner to withdraw all funds from faucet
+    /// @param receiver is the address owner wants to receive the funds
+    /// @custom:revert FaucetEmpty if there is zero balance in the faucet
+    /// @custom:revert WithdrawalFailed if faucet is unable to send funds to receiver
+    function withdrawAll(address receiver) external onlyOwner {
+        uint256 balance = address(this).balance;
+
+        if(balance == 0) {
+            revert FaucetEmpty();
+        }
+
+        (bool success, ) = receiver.call{value: balance}("");
+
+        if(!success) {
+            revert WithdrawalFailed();
+        }
+
+        emit Withdrawn(receiver, balance);
     }
 }
